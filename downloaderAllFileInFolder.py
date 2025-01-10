@@ -6,11 +6,15 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 import io
+from dotenv import load_dotenv
+load_dotenv()
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+FOLDER_ID = os.getenv("FOLDER_ID")
+DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "./downloads")
 
-
+# this downloader shows 10 recent files and allows the user to download one of them
 def main():
     """Lists files in Google Drive and allows the user to download by selection."""
     creds = None
@@ -29,11 +33,13 @@ def main():
 
     try:
         service = build("drive", "v3", credentials=creds)
-
         # Fetch file list
         results = (
+            
             service.files()
-            .list(pageSize=10, fields="nextPageToken, files(id, name)")
+            .list(
+                q=f"'{FOLDER_ID}' in parents",
+                pageSize=10, fields="nextPageToken, files(id, name)")
             .execute()
         )
         items = results.get("files", [])
@@ -48,23 +54,12 @@ def main():
         for idx, item in enumerate(items, start=1):
             file_dict[idx] = item
             print(f"{idx}. {item['name']}")
-
-        # Let user select a file by number
-        while True:
-            try:
-                selection = int(input("\nSelect a file number to download: "))
-                if selection in file_dict:
-                    selected_file = file_dict[selection]
-                    break
-                else:
-                    print("Invalid selection. Please choose a valid number.")
-            except ValueError:
-                print("Please enter a number.")
+            file_id = item["id"]
+            file_name = item["name"]
+            download_file(service, file_id, file_name)
 
         # Download selected file
-        file_id = selected_file["id"]
-        file_name = selected_file["name"]
-        download_file(service, file_id, file_name)
+        
 
     except HttpError as error:
         print(f"An error occurred: {error}")
@@ -80,16 +75,16 @@ def download_file(service, file_id, file_name):
         if mime_type.startswith("application/vnd.google-apps"):
             # Export Google Workspace files (Docs, Sheets, Slides)
             export_mime_type = {
-                "application/vnd.google-apps.document": ("application/pdf", ".pdf"),  # Google Docs
-                "application/vnd.google-apps.spreadsheet": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),  # Google Sheets
-                "application/vnd.google-apps.presentation": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"),  # Google Slides
+                "application/vnd.google-apps.document": ("application/pdf", ".pdf"),
+                "application/vnd.google-apps.spreadsheet": ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),
+                "application/vnd.google-apps.presentation": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"),
             }
             
             if mime_type in export_mime_type:
                 # Unpack the export format and file extension
                 export_format, file_extension = export_mime_type[mime_type]
                 request = service.files().export(fileId=file_id, mimeType=export_format)
-                file_path = os.path.join(os.getcwd(), f"{file_name}{file_extension}")
+                file_path = os.path.join(DOWNLOAD_FOLDER, f"{file_name}{file_extension}")
                 with open(file_path, "wb") as fh:
                     fh.write(request.execute())
                 print(f"Exported file downloaded as {file_path}")
@@ -98,7 +93,7 @@ def download_file(service, file_id, file_name):
         else:
             # Download binary files directly
             request = service.files().get_media(fileId=file_id)
-            file_path = os.path.join(os.getcwd(), file_name)
+            file_path = os.path.join(DOWNLOAD_FOLDER, file_name)
             fh = io.FileIO(file_path, "wb")
             downloader = MediaIoBaseDownload(fh, request)
 
