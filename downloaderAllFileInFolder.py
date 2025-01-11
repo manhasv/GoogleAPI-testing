@@ -5,31 +5,22 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
-import io
+
 from dotenv import load_dotenv
+from utils.drive_utils import auth
+import io
+
 load_dotenv()
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+# Update the .env file with the folder ID and download folder
 FOLDER_ID = os.getenv("FOLDER_ID")
-DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER", "./downloads")
+DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER")
 
-# this downloader shows 10 recent files and allows the user to download one of them
+# this downloader go into a folder on Drive and download all files in it
 def main():
-    """Lists files in Google Drive and allows the user to download by selection."""
-    creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+    creds = auth()
 
     try:
         service = build("drive", "v3", credentials=creds)
@@ -84,7 +75,7 @@ def download_file(service, file_id, file_name):
                 # Unpack the export format and file extension
                 export_format, file_extension = export_mime_type[mime_type]
                 request = service.files().export(fileId=file_id, mimeType=export_format)
-                file_path = os.path.join(DOWNLOAD_FOLDER, f"{file_name}{file_extension}")
+                file_path = os.path.join("./download", f"{file_name}{file_extension}")
                 with open(file_path, "wb") as fh:
                     fh.write(request.execute())
                 print(f"Exported file downloaded as {file_path}")
@@ -93,7 +84,7 @@ def download_file(service, file_id, file_name):
         else:
             # Download binary files directly
             request = service.files().get_media(fileId=file_id)
-            file_path = os.path.join(DOWNLOAD_FOLDER, file_name)
+            file_path = os.path.join("./download", file_name)
             fh = io.FileIO(file_path, "wb")
             downloader = MediaIoBaseDownload(fh, request)
 
